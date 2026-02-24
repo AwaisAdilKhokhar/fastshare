@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fastshare"
+dynamic = ["version"]
+description = "Zero-copy shared memory transfer of large Python objects"
+keywords = ["shared-memory", "ipc", "zero-copy", "multiprocessing", "pickle", "numpy", "inter-process-communication"]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{name = "Awais Bin Adil", email = "binadilawais@gmail.com"}]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Object Brokering",
+    "Topic :: System :: Distributed Computing",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+numpy = ["numpy>=1.20"]
+dev = ["pytest>=8.0", "pytest-benchmark", "ruff"]
+
+[project.scripts]
+fastshare = "fastshare.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/AwaisAdilKhokhar/fastshare"
+Source = "https://github.com/AwaisAdilKhokhar/fastshare"
+Issues = "https://github.com/AwaisAdilKhokhar/fastshare/issues"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/fastshare/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fastshare"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 99
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: cross-process integration tests (may be slow)",
+    "fork_only: tests requiring fork start method (skip on Windows)",
+    "benchmark: performance benchmark tests",
+]

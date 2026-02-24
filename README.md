@@ -1,0 +1,261 @@
+[![PyPI version](https://img.shields.io/pypi/v/fastshare)](https://pypi.org/project/fastshare/)
+[![Python versions](https://img.shields.io/pypi/pyversions/fastshare)](https://pypi.org/project/fastshare/)
+[![License](https://img.shields.io/pypi/l/fastshare)](https://github.com/AwaisAdilKhokhar/fastshare/blob/master/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/AwaisAdilKhokhar/fastshare/ci.yml?branch=master)](https://github.com/AwaisAdilKhokhar/fastshare/actions)
+
+# fastshare
+
+Zero-copy shared memory transfer of large Python objects between processes.
+
+## Why fastshare?
+
+Passing large objects between Python processes is slow. The standard approach --
+`pickle.dumps()` through a `multiprocessing.Queue` or pipe -- copies the data at
+least twice: once to serialize and once to push through the pipe. For a 100 MB
+NumPy array, that means 200 MB+ of unnecessary copying on every transfer.
+
+fastshare uses Python 3.8+'s pickle protocol 5 out-of-band buffers combined with
+shared memory to eliminate those copies. Large buffer-backed objects (NumPy
+arrays, bytearrays) are placed directly into shared memory and reconstructed on
+the other side without copying. Small objects fall back to standard pickle
+automatically.
+
+The result: drop-in `write()` and `read()` calls that work with any picklable
+object, but transfer large arrays in microseconds instead of milliseconds.
+
+## Installation
+
+```bash
+pip install fastshare
+```
+
+With NumPy support (enables zero-copy array transfer):
+
+```bash
+pip install fastshare[numpy]
+```
+
+Requires Python 3.10+.
+
+## Quick Start
+
+Write a large object in one process, read it in another:
+
+```python
+# example_quick_start.py
+import multiprocessing as mp
+from fastshare import write, read
+
+
+def reader(token):
+    """Child process: reconstruct the object from shared memory."""
+    data = read(token)
+    print(f"Reader got {len(data):,} bytes, first 10: {data[:10]}")
+    # Reader got 5,000,000 bytes, first 10: b'HELLOWORLD'
+
+
+if __name__ == "__main__":
+    # Create a 5 MB object
+    payload = b"HELLOWORLD" * 500_000
+
+    # Write to shared memory and get a token string
+    token = write(payload)
+
+    # Pass the token (a short string) to the child process
+    p = mp.Process(target=reader, args=(token,))
+    p.start()
+    p.join()
+```
+
+The token is a lightweight string like `FSHR:shm:FSHR_a1b2c3` -- only the token
+crosses the process boundary, not the data.
+
+## SharedData Broadcast
+
+For the common pattern of sharing one large object with a pool of workers, use
+the `SharedData` context manager:
+
+```python
+# example_broadcast.py
+import multiprocessing as mp
+import numpy as np
+from fastshare import SharedData
+
+
+def worker(args):
+    """Each worker loads the shared array (cached after first access)."""
+    name, idx = args
+    arr = SharedData.load(name)
+    total = float(arr.sum())
+    print(f"Worker {idx}: shape={arr.shape}, sum={total:.0f}")
+    return total
+
+
+if __name__ == "__main__":
+    # Create a large array (100 MB)
+    data = np.ones((25_000_000,), dtype=np.float32)
+
+    with SharedData(data) as sd:
+        # sd.name is the block name to pass to workers
+        with mp.Pool(4) as pool:
+            results = pool.map(worker, [(sd.name, i) for i in range(4)])
+
+    # Worker 0: shape=(25000000,), sum=25000000
+    # Worker 1: shape=(25000000,), sum=25000000
+    # Worker 2: shape=(25000000,), sum=25000000
+    # Worker 3: shape=(25000000,), sum=25000000
+    print(f"All workers returned: {results}")
+```
+
+Each worker gets a zero-copy read-only view of the same shared memory block. The
+data is serialized once by the parent and deserialized (with zero-copy for NumPy
+arrays) once per worker process, with subsequent calls to `SharedData.load()`
+returning the cached object.
+
+## Benchmarks
+
+Single-process `write()` + `read()` round-trip, measured with pytest-benchmark
+on Windows 10 (Python 3.12, 8-core Intel).
+
+| Object | Size | pickle (stdlib) | fastshare | Ratio |
+|--------|------|-----------------|-----------|-------|
+| `bytes` | 10 KB | 4.5 µs | 116 µs | 0.04x |
+| `bytes` | 10 MB | 7.5 ms | 22.2 ms | 0.34x |
+| NumPy `float32` | 100 MB | 69 ms | 45 ms | 1.5x |
+| NumPy `float32` | 500 MB | 364 ms | 231 ms | 1.6x |
+| NumPy `float32` | 1 GB | 863 ms | 488 ms | 1.8x |
+
+For objects below the 1 MB threshold, fastshare delegates to standard pickle,
+so the 10 KB row reflects fastshare's size-estimation overhead rather than
+shared memory performance.
+
+**Where fastshare shines:** The win grows with object size and when the object
+supports pickle protocol 5 out-of-band buffers (NumPy arrays, bytearrays). At
+100 MB, zero-copy deserialization avoids the full-array copy that `pickle.loads()`
+must perform. In multi-process scenarios the advantage compounds -- shared memory
+avoids the additional pipe-copy overhead that `multiprocessing.Queue` incurs, and
+broadcast to N workers amortizes the single write across all readers.
+
+Raw benchmark output: [`benchmarks/benchmark_results.txt`](benchmarks/benchmark_results.txt)
+
+## API Reference
+
+### Core Functions
+
+```python
+fastshare.write(obj, *, threshold=1_000_000) -> str
+```
+
+Serialize `obj` and return a fastshare token string. Objects below `threshold`
+bytes use pickle fallback; larger objects use shared memory for zero-copy
+transfer. If shared memory allocation fails, falls back to pickle with a
+`UserWarning`.
+
+- `obj` -- Any picklable Python object.
+- `threshold` (int) -- Size in bytes below which pickle fallback is used. Default: 1,000,000 (1 MB).
+- Returns: A `"FSHR:"`-prefixed token string.
+- Raises: `pickle.PicklingError` if `obj` cannot be pickled.
+
+```python
+fastshare.read(token, *, readonly=True) -> object
+```
+
+Reconstruct an object from a fastshare token.
+
+- `token` (str) -- A `"FSHR:"`-prefixed token from `write()`.
+- `readonly` (bool) -- If `True` (default), NumPy arrays are read-only. Set `False` to allow mutation.
+- Returns: The reconstructed Python object.
+- Raises: `FastShareError` if the token is invalid or the shared memory block is missing.
+
+### SharedData Class
+
+```python
+class fastshare.SharedData(obj)
+```
+
+Write-once broadcast context manager. Use for sharing large objects with
+multiple worker processes.
+
+- Context manager: `with SharedData(obj) as sd:` serializes to shared memory. On exit the block is unlinked.
+- `.name` (str) -- The FSHR-prefixed block name for passing to workers.
+- `.size` (int) -- Size of the shared memory block in bytes.
+
+```python
+SharedData.load(name) -> object
+```
+
+Load a shared object by block name with per-process caching. Workers call this
+with the name from the parent.
+
+- `name` (str) -- The FSHR-prefixed block name.
+- Returns: The deserialized object (NumPy arrays are read-only).
+- Raises: `TypeError` if name is not a string, `BlockNotFoundError` if the block is gone.
+
+```python
+SharedData.clear_cache() -> None
+```
+
+Clear the per-process object cache. Call between batches in long-running
+workers to free memory.
+
+### Cleanup
+
+```python
+fastshare.cleanup(dry_run=False) -> CleanupResult
+```
+
+Clean up orphaned FSHR-prefixed shared memory blocks. Discovers blocks on the
+system, skips blocks owned by the calling process, and unlinks the rest.
+Linux only (other platforms return an empty result).
+
+- `dry_run` (bool) -- If `True`, report without unlinking.
+- Returns: `CleanupResult` with `.cleaned`, `.failed`, `.skipped` lists.
+
+CLI equivalent:
+
+```bash
+fastshare cleanup [--dry-run] [--verbose] [--quiet]
+```
+
+### Exceptions
+
+- `FastShareError` -- Base exception for all fastshare errors.
+- `AllocationError(FastShareError)` -- Shared memory allocation failed.
+- `BlockNotFoundError(FastShareError, KeyError)` -- Shared memory block not found by name.
+
+## How It Works
+
+fastshare uses Python's pickle protocol 5 out-of-band buffer support combined
+with `multiprocessing.shared_memory`. When `write()` is called on a large
+object, pickle separates the large data buffers (like NumPy array contents) from
+the metadata. The buffers are written directly into a shared memory block -- no
+copies. The metadata (small) is pickled normally and stored as a header.
+
+When `read()` is called, the metadata is unpickled and the buffers are
+reconstructed as zero-copy views into the shared memory block.
+
+```
+Process A                          Process B
+   |                                  |
+   write(obj)                         read(token)
+   |                                  |
+   pickle5 ──> shared memory ──> unpickle5
+   (separate     (zero-copy       (reconstruct
+    buffers)      transfer)        with views)
+```
+
+## Platform Support
+
+|  | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 |
+|---|---|---|---|---|
+| Linux | Yes | Yes | Yes | Yes |
+| macOS | Yes | Yes | Yes | Yes |
+| Windows | Yes | Yes | Yes | Yes |
+
+- All platforms support shared memory transfer.
+- The `cleanup` command (orphan block discovery) only works on Linux (`/dev/shm` scanning).
+- The `fork` start method is not available on Windows; `spawn` works everywhere.
+
+## License
+
+MIT
