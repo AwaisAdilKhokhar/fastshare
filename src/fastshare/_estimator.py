@@ -2,7 +2,8 @@
 
 Provides a quick estimate of an object's memory footprint in bytes,
 used to decide whether to route through shared memory or standard pickle.
-Exact for NumPy arrays (``ndarray.nbytes``) and bytes-like objects (``len``).
+Exact for NumPy arrays (``ndarray.nbytes``), PyArrow objects (``nbytes``),
+and bytes-like objects (``len``).
 Uses bounded sampling (max 8 items) for collections to avoid traversing
 massive structures.
 """
@@ -23,7 +24,8 @@ def estimate_size(obj: object) -> int:
 
     Strategy:
       1. **NumPy ndarray** -- exact via ``ndarray.nbytes``
-      2. **bytes / bytearray / memoryview** -- exact via ``len()``
+      2. **PyArrow Table/RecordBatch/Array/ChunkedArray** -- exact via ``nbytes``
+      3. **bytes / bytearray / memoryview** -- exact via ``len()``
       3. **dict** -- container overhead + sampled average value size * count
       4. **list / tuple** -- container overhead + sampled average item size * count
       5. **Everything else** -- ``sys.getsizeof(obj)`` (shallow)
@@ -37,6 +39,15 @@ def estimate_size(obj: object) -> int:
         import numpy as np  # noqa: PLC0415
 
         if isinstance(obj, np.ndarray):
+            return int(obj.nbytes)
+    except ImportError:
+        pass
+
+    # --- Arrow fast path (exact via nbytes) --------------------------------
+    try:
+        import pyarrow as pa  # noqa: PLC0415
+
+        if isinstance(obj, (pa.Table, pa.RecordBatch, pa.Array, pa.ChunkedArray)):
             return int(obj.nbytes)
     except ImportError:
         pass

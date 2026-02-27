@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "fastshare"
 dynamic = ["version"]
 description = "Zero-copy shared memory transfer of large Python objects"
-keywords = ["shared-memory", "ipc", "zero-copy", "multiprocessing", "pickle", "numpy", "inter-process-communication"]
+keywords = ["shared-memory", "ipc", "zero-copy", "multiprocessing", "pickle", "numpy", "pyarrow", "inter-process-communication"]
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -29,7 +29,8 @@ classifiers = [
 
 [project.optional-dependencies]
 numpy = ["numpy>=1.20"]
-dev = ["pytest>=8.0", "pytest-benchmark", "ruff"]
+arrow = ["pyarrow>=2.0"]
+dev = ["pytest>=8.0", "pytest-benchmark", "ruff", "pyarrow>=2.0"]
 
 [project.scripts]
 fastshare = "fastshare.__main__:main"
