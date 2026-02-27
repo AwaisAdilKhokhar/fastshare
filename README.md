@@ -17,11 +17,14 @@ NumPy array, that means 200 MB+ of unnecessary copying on every transfer.
 fastshare uses Python 3.8+'s pickle protocol 5 out-of-band buffers combined with
 shared memory to eliminate those copies. Large buffer-backed objects (NumPy
 arrays, bytearrays) are placed directly into shared memory and reconstructed on
-the other side without copying. Small objects fall back to standard pickle
-automatically.
+the other side without copying. When PyArrow is installed, Arrow Tables,
+RecordBatches, Arrays, and pandas DataFrames are serialized via the native Arrow
+IPC format for efficient zero-copy transfer. Small objects fall back to standard
+pickle automatically.
 
 The result: drop-in `write()` and `read()` calls that work with any picklable
-object, but transfer large arrays in microseconds instead of milliseconds.
+object -- plus PyArrow and pandas types -- transferring large data in
+microseconds instead of milliseconds.
 
 ## Installation
 
@@ -33,6 +36,18 @@ With NumPy support (enables zero-copy array transfer):
 
 ```bash
 pip install fastshare[numpy]
+```
+
+With PyArrow support (enables Arrow IPC transfer for Tables, DataFrames, etc.):
+
+```bash
+pip install fastshare[arrow]
+```
+
+Both:
+
+```bash
+pip install fastshare[numpy,arrow]
 ```
 
 Requires Python 3.10+.
@@ -112,6 +127,50 @@ data is serialized once by the parent and deserialized (with zero-copy for NumPy
 arrays) once per worker process, with subsequent calls to `SharedData.load()`
 returning the cached object.
 
+## PyArrow Support
+
+When `pyarrow` is installed, fastshare can serialize Arrow Tables, RecordBatches,
+Arrays, and ChunkedArrays via the native Arrow IPC stream format -- no pickle
+overhead, no extra copies.
+
+```python
+import pyarrow as pa
+from fastshare import write, read
+
+# Round-trip an Arrow Table
+table = pa.table({"x": [1, 2, 3], "y": [4.0, 5.0, 6.0]})
+token = write(table)
+result = read(token)  # returns pa.Table
+print(result.to_pydict())
+# {'x': [1, 2, 3], 'y': [4.0, 5.0, 6.0]}
+```
+
+Pandas DataFrames are auto-converted to Arrow Tables when pyarrow is available.
+On read they come back as Arrow Tables -- call `.to_pandas()` if you need a
+DataFrame again:
+
+```python
+import pandas as pd
+from fastshare import write, read
+
+df = pd.DataFrame({"a": range(1_000_000)})
+token = write(df)          # auto-converts to Arrow Table
+result = read(token)       # returns pa.Table
+df_back = result.to_pandas()
+```
+
+SharedData works with Arrow objects too:
+
+```python
+import pyarrow as pa
+from fastshare import SharedData
+
+table = pa.table({"col": range(10_000_000)})
+with SharedData(table) as sd:
+    # pass sd.name to workers; they call SharedData.load(sd.name)
+    ...
+```
+
 ## Benchmarks
 
 Single-process `write()` + `read()` round-trip, measured with pytest-benchmark
@@ -124,6 +183,10 @@ on Windows 10 (Python 3.12, 8-core Intel).
 | NumPy `float32` | 100 MB | 69 ms | 45 ms | 1.5x |
 | NumPy `float32` | 500 MB | 364 ms | 231 ms | 1.6x |
 | NumPy `float32` | 1 GB | 863 ms | 488 ms | 1.8x |
+| Arrow Table `int32` | 100 MB | 63 ms | 75 ms | 0.84x |
+| Arrow Table `float32` | 500 MB | 343 ms | 471 ms | 0.73x |
+| Arrow Table `float32` | 1 GB | 1,302 ms | 1,205 ms | 1.08x |
+| Arrow Table `float32` | 2 GB | 2,037 ms | 1,871 ms | 1.09x |
 
 For objects below the 1 MB threshold, fastshare delegates to standard pickle,
 so the 10 KB row reflects fastshare's size-estimation overhead rather than
@@ -132,9 +195,11 @@ shared memory performance.
 **Where fastshare shines:** The win grows with object size and when the object
 supports pickle protocol 5 out-of-band buffers (NumPy arrays, bytearrays). At
 100 MB, zero-copy deserialization avoids the full-array copy that `pickle.loads()`
-must perform. In multi-process scenarios the advantage compounds -- shared memory
-avoids the additional pipe-copy overhead that `multiprocessing.Queue` incurs, and
-broadcast to N workers amortizes the single write across all readers.
+must perform. Arrow Tables show overhead in single-process round-trips (Arrow IPC
+serialization cost), but in multi-process scenarios the advantage compounds --
+shared memory avoids the additional pipe-copy overhead that
+`multiprocessing.Queue` incurs, and broadcast to N workers amortizes the single
+write across all readers.
 
 Raw benchmark output: [`benchmarks/benchmark_results.txt`](benchmarks/benchmark_results.txt)
 
@@ -148,10 +213,12 @@ fastshare.write(obj, *, threshold=1_000_000) -> str
 
 Serialize `obj` and return a fastshare token string. Objects below `threshold`
 bytes use pickle fallback; larger objects use shared memory for zero-copy
-transfer. If shared memory allocation fails, falls back to pickle with a
-`UserWarning`.
+transfer. When `pyarrow` is installed, Arrow objects (Table, RecordBatch, Array,
+ChunkedArray) are serialized via Arrow IPC, and pandas DataFrames are
+auto-converted to Arrow Tables. If shared memory allocation fails, falls back to
+pickle with a `UserWarning`.
 
-- `obj` -- Any picklable Python object.
+- `obj` -- Any picklable Python object, or a PyArrow Table / RecordBatch / Array / ChunkedArray, or a pandas DataFrame (auto-converted to Arrow Table when pyarrow is installed).
 - `threshold` (int) -- Size in bytes below which pickle fallback is used. Default: 1,000,000 (1 MB).
 - Returns: A `"FSHR:"`-prefixed token string.
 - Raises: `pickle.PicklingError` if `obj` cannot be pickled.
@@ -160,11 +227,13 @@ transfer. If shared memory allocation fails, falls back to pickle with a
 fastshare.read(token, *, readonly=True) -> object
 ```
 
-Reconstruct an object from a fastshare token.
+Reconstruct an object from a fastshare token. For Arrow objects, returns the
+original Arrow type (Table, RecordBatch, Array, or ChunkedArray). Pandas
+DataFrames come back as Arrow Tables.
 
 - `token` (str) -- A `"FSHR:"`-prefixed token from `write()`.
 - `readonly` (bool) -- If `True` (default), NumPy arrays are read-only. Set `False` to allow mutation.
-- Returns: The reconstructed Python object.
+- Returns: The reconstructed Python object (or Arrow type).
 - Raises: `FastShareError` if the token is invalid or the shared memory block is missing.
 
 ### SharedData Class
@@ -174,7 +243,8 @@ class fastshare.SharedData(obj)
 ```
 
 Write-once broadcast context manager. Use for sharing large objects with
-multiple worker processes.
+multiple worker processes. Supports any picklable object, NumPy arrays, and
+PyArrow Tables / RecordBatches / Arrays / ChunkedArrays.
 
 - Context manager: `with SharedData(obj) as sd:` serializes to shared memory. On exit the block is unlinked.
 - `.name` (str) -- The FSHR-prefixed block name for passing to workers.
@@ -243,6 +313,14 @@ Process A                          Process B
    (separate     (zero-copy       (reconstruct
     buffers)      transfer)        with views)
 ```
+
+**Arrow IPC path:** When the object is a PyArrow type (or a pandas DataFrame
+with pyarrow installed), fastshare bypasses pickle entirely and writes the data
+using Arrow's native IPC stream format. A flags byte in the FSHR binary header
+(`0x00` = pickle, `0x01` = Arrow IPC) tells the reader which deserialization
+path to take. A one-byte type tag after the header preserves the original Arrow
+type (Table, RecordBatch, Array, ChunkedArray, or pandas-converted) so `read()`
+returns exactly the type that was written.
 
 ## Platform Support
 
