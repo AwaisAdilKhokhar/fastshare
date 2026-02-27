@@ -5,6 +5,11 @@ Provides :func:`write` (serialize an object to a fastshare token) and
 a size heuristic to choose between shared memory (fast, zero-copy for
 large objects) and pickle-to-base64 (portable fallback for small
 objects or when shared memory allocation fails).
+
+When ``pyarrow`` is installed, Arrow objects (Table, RecordBatch, Array,
+ChunkedArray) are serialized via Arrow IPC for efficient zero-copy
+transfer.  Pandas DataFrames are auto-converted to Arrow Tables when
+``pyarrow`` is available.
 """
 
 from __future__ import annotations
@@ -14,11 +19,21 @@ import logging
 import pickle
 import warnings
 
+from fastshare._arrow_utils import (
+    convert_pandas_to_arrow,
+    get_arrow_type_tag,
+    has_arrow,
+    is_arrow_type,
+)
 from fastshare._errors import AllocationError, BlockNotFoundError, FastShareError
 from fastshare._estimator import estimate_size
 from fastshare._numpy_utils import check_contiguity, enforce_readonly
 from fastshare._registry import attach
-from fastshare._serializer import deserialize_from_block, serialize_to_block
+from fastshare._serializer import (
+    deserialize_from_block,
+    serialize_arrow_to_block,
+    serialize_to_block,
+)
 
 logger = logging.getLogger("fastshare")
 
@@ -30,11 +45,19 @@ def write(obj: object, *, threshold: int = 1_000_000) -> str:
     as a base64 token.  Larger objects are written into shared memory
     for zero-copy transfer between processes.
 
+    When ``pyarrow`` is installed, Arrow objects (Table, RecordBatch,
+    Array, ChunkedArray) are serialized via Arrow IPC stream format for
+    efficient zero-copy shared memory transfer.  Pandas DataFrames are
+    auto-converted to Arrow Tables when ``pyarrow`` is available; on
+    read they come back as Arrow Tables (call ``.to_pandas()`` if
+    needed).
+
     If shared memory allocation fails, the function falls back to
     pickle with a :class:`UserWarning`.
 
     Args:
-        obj: Any picklable Python object.
+        obj: Any picklable Python object, or a PyArrow Table,
+            RecordBatch, Array, ChunkedArray, or pandas DataFrame.
         threshold: Size in bytes below which pickle fallback is used.
             Defaults to 1 MB.
 
@@ -44,13 +67,45 @@ def write(obj: object, *, threshold: int = 1_000_000) -> str:
     Raises:
         pickle.PicklingError: If *obj* cannot be pickled.
     """
-    # 1. Contiguity check (NumPy arrays)
+    # 1. Pandas auto-convert (before any other processing)
+    #    If pyarrow is available and obj is a pandas DataFrame, convert to Arrow Table.
+    #    The type_tag will be ARROW_TYPE_PANDAS_DATAFRAME so read() returns Arrow Table.
+    was_pandas = False
+    if has_arrow():
+        obj, was_pandas = convert_pandas_to_arrow(obj)
+
+    # 2. Arrow type detection -> Arrow IPC path
+    if has_arrow() and is_arrow_type(obj):
+        estimated_size = estimate_size(obj)
+        if estimated_size < threshold:
+            logger.debug(
+                "Arrow object below threshold (%d < %d), using pickle fallback",
+                estimated_size,
+                threshold,
+            )
+            return _pickle_token(obj)
+        try:
+            if was_pandas:
+                type_tag = 0x05  # ARROW_TYPE_PANDAS_DATAFRAME
+            else:
+                type_tag = get_arrow_type_tag(obj)
+            handle = serialize_arrow_to_block(obj, type_tag)
+            return "FSHR:shm:" + handle.name
+        except (OSError, AllocationError) as e:
+            warnings.warn(
+                f"Shared memory allocation failed: {e}. Falling back to pickle.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return _pickle_token(obj)
+
+    # 3. Contiguity check (NumPy arrays) -- existing behavior
     obj = check_contiguity(obj)
 
-    # 2. Size estimation
+    # 4. Size estimation -- existing behavior
     estimated_size = estimate_size(obj)
 
-    # 3. Threshold decision -- small objects go via pickle fallback
+    # 5. Threshold decision -- small objects go via pickle fallback
     if estimated_size < threshold:
         logger.debug(
             "Object below threshold (%d < %d), using pickle fallback",
@@ -59,7 +114,7 @@ def write(obj: object, *, threshold: int = 1_000_000) -> str:
         )
         return _pickle_token(obj)
 
-    # 4. Shared memory path -- large objects
+    # 6. Shared memory path -- large objects (existing pickle path)
     try:
         handle = serialize_to_block(obj)
         return "FSHR:shm:" + handle.name

@@ -8,10 +8,11 @@ call ``SharedData.load(name)`` for a cached zero-copy view.
 
 from __future__ import annotations
 
+from fastshare._arrow_utils import get_arrow_type_tag, has_arrow, is_arrow_type
 from fastshare._errors import BlockNotFoundError, FastShareError  # noqa: F401
 from fastshare._numpy_utils import enforce_readonly
 from fastshare._registry import BlockHandle, attach
-from fastshare._serializer import deserialize_from_block, serialize_to_block
+from fastshare._serializer import deserialize_from_block, serialize_arrow_to_block, serialize_to_block
 
 # Module-level cache: {block_name: deserialized_object}
 # Each process gets its own copy after fork/spawn.
@@ -51,8 +52,13 @@ class SharedData:
         if self._entered:
             raise RuntimeError("SharedData does not support re-entry")
         self._entered = True
-        # Serialization failures (PicklingError, AllocationError) propagate immediately
-        self._handle = serialize_to_block(self._obj)
+        # Arrow IPC path for Arrow objects
+        if has_arrow() and is_arrow_type(self._obj):
+            type_tag = get_arrow_type_tag(self._obj)
+            self._handle = serialize_arrow_to_block(self._obj, type_tag)
+        else:
+            # Existing pickle path
+            self._handle = serialize_to_block(self._obj)
         self._obj = None  # Release original object reference
         return self
 

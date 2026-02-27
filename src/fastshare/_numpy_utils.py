@@ -7,6 +7,12 @@ import warnings
 # Lazy numpy availability cache
 _numpy_available: bool | None = None
 
+# Note: warn-and-fallback for missing numpy is a no-op in practice because
+# numpy arrays cannot exist without numpy installed. The check_contiguity
+# function already returns obj unchanged when numpy is not available, and
+# the object will be handled by the pickle fallback path. The same applies
+# to Arrow types -- they cannot exist without pyarrow installed.
+
 
 def has_numpy() -> bool:
     """Return True if numpy is importable, caching the result after first call."""
