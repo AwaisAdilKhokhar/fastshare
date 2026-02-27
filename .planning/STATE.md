@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Publication & Polish
 status: in-progress
-last_updated: "2026-02-27T02:28:35Z"
+last_updated: "2026-02-27T02:35:27Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -18,17 +18,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Zero-copy shared memory transfer of large Python objects with a clean, polished public API
-**Current focus:** Phase 08.1 — PyArrow Zero-Copy Support (In Progress)
+**Current focus:** Phase 9 — Distribution (Next)
 
 ## Current Position
 
 Milestone: v1.1 Publication & Polish
-Phase: 08.1 (PyArrow Zero-Copy Support)
-Plan: 2 of 2 in current phase
+Phase: 9 (Distribution)
+Plan: 1 of 2 in current phase
 Status: In Progress
-Last activity: 2026-02-27 — Completed 08.1-01-PLAN.md (Arrow IPC engine)
+Last activity: 2026-02-27 — Completed 08.1-02-PLAN.md (Arrow API integration)
 
-Progress: [################....] 82% (v1.0 complete, v1.1: 9 plans done)
+Progress: [##################..] 91% (v1.0 complete, v1.1: 10 plans done)
 
 ## Performance Metrics
 
@@ -39,8 +39,8 @@ Progress: [################....] 82% (v1.0 complete, v1.1: 9 plans done)
 - Timeline: 2 days (2026-02-24 to 2026-02-25)
 
 **v1.1:**
-- Total plans completed: 9
-- Phases remaining: 2 (Phase 08.1: 1 plan left, Phase 9: 2 plans left)
+- Total plans completed: 10
+- Phases remaining: 1 (Phase 9: 2 plans left)
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
@@ -52,6 +52,7 @@ Progress: [################....] 82% (v1.0 complete, v1.1: 9 plans done)
 | 08 | 01 | 1min | 2 | 1 |
 | 08 | 02 | 1min | 2 | 1 |
 | 08.1 | 01 | 4min | 2 | 4 |
+| 08.1 | 02 | 3min | 2 | 4 |
 | 09 | 01 | 6min | 2 | 1 |
 
 ## Accumulated Context
@@ -80,6 +81,9 @@ Full v1.0 decision log archived in `.planning/milestones/v1.0-ROADMAP.md`.
 - **08.1-01:** Arrow IPC stream format chosen over pickle p5 (PyArrow lacks __reduce_ex__ with PickleBuffer)
 - **08.1-01:** memoryview cast signed->unsigned needed for Arrow buffer to shared memory compatibility
 - **08.1-01:** Type tag byte stored after FSHR header for round-trip Arrow type preservation
+- **08.1-02:** Pandas auto-convert happens first in write() before type detection (DataFrame -> Arrow Table)
+- **08.1-02:** read() and SharedData.load() needed no changes -- deserialize_from_block routes on flags byte
+- **08.1-02:** Warn-and-fallback for missing optional deps is no-op (objects can't exist without their library)
 
 ### Pending Todos
 
@@ -97,5 +101,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 08.1-01-PLAN.md (Arrow IPC engine)
+Stopped at: Completed 08.1-02-PLAN.md (Arrow API integration + test suite)
 Resume file: None
