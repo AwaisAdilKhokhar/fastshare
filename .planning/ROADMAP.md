@@ -94,7 +94,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 08.1-01-PLAN.md -- Arrow IPC engine: _arrow_utils.py, _estimator.py Arrow path, _serializer.py Arrow IPC, pyproject.toml [arrow] extra
+- [x] 08.1-01-PLAN.md -- Arrow IPC engine: _arrow_utils.py, _estimator.py Arrow path, _serializer.py Arrow IPC, pyproject.toml [arrow] extra
 - [ ] 08.1-02-PLAN.md -- API integration: write/read Arrow detection, SharedData Arrow support, pandas auto-convert, test suite
 
 ### Phase 9: Distribution
@@ -128,5 +128,5 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9
 | 6. Documentation | v1.1 | 3/3 | Complete | 2026-02-26 |
 | 7. Packaging | v1.1 | 2/2 | Complete | 2026-02-26 |
 | 8. Repository | v1.1 | 2/2 | Complete | 2026-02-26 |
-| 8.1 PyArrow Support | v1.1 | 0/2 | Not started | - |
+| 8.1 PyArrow Support | v1.1 | 1/2 | In Progress | - |
 | 9. Distribution | v1.1 | 0/2 | Not started | - |
