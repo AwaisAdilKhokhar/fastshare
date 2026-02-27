@@ -1,8 +1,13 @@
-"""Pickle protocol 5 serializer with binary header and shared memory packing.
+"""Serializer with binary header and shared memory packing.
 
-Serializes Python objects using PEP 574 out-of-band buffers, packing the pickle
-metadata stream and large data buffers into a single shared memory block with a
-struct-based binary header describing the layout.
+Supports two serialization formats:
+  - **Pickle protocol 5** (FLAG_PICKLE=0x00): PEP 574 out-of-band buffers for
+    general Python objects and NumPy arrays.
+  - **Arrow IPC stream** (FLAG_ARROW_IPC=0x01): Native Arrow IPC format for
+    PyArrow Table, RecordBatch, Array, and ChunkedArray objects.
+
+The ``flags`` byte in the FSHR binary header distinguishes the two paths on
+deserialization.
 """
 
 from __future__ import annotations
@@ -33,6 +38,10 @@ _HEADER_MAGIC = b"FSHR"
 _HEADER_VERSION = 1
 _HEADER_BASE_FORMAT = "<4sBBHQ"  # magic, version, flags, num_buffers, pickle_size
 _HEADER_BASE_SIZE = struct.calcsize(_HEADER_BASE_FORMAT)  # 16 bytes
+
+# Serialization format flags (stored in header flags byte)
+FLAG_PICKLE = 0x00  # Standard pickle protocol 5 (existing behavior)
+FLAG_ARROW_IPC = 0x01  # Arrow IPC stream format
 
 
 def pack_header(pickle_size: int, buffer_sizes: list[int], flags: int = 0) -> bytes:
@@ -135,12 +144,100 @@ def serialize_to_block(obj: object) -> BlockHandle:
     return block
 
 
+def serialize_arrow_to_block(obj: object, type_tag: int) -> BlockHandle:
+    """Serialize an Arrow object into a shared memory block using IPC stream format.
+
+    Args:
+        obj: A PyArrow Table, RecordBatch, Array, or ChunkedArray.
+        type_tag: The arrow type tag byte for round-trip type preservation.
+
+    Returns:
+        A :class:`BlockHandle` (owner) wrapping the shared memory block.
+    """
+    import pyarrow as pa  # noqa: PLC0415
+
+    # Normalize all types to Table for IPC stream writing
+    if isinstance(obj, pa.RecordBatch):
+        table = pa.Table.from_batches([obj])
+    elif isinstance(obj, pa.Array):
+        table = pa.table({"_": obj})
+    elif isinstance(obj, pa.ChunkedArray):
+        table = pa.table({"_": obj})
+    elif isinstance(obj, pa.Table):
+        table = obj
+    else:
+        msg = f"Unsupported Arrow type: {type(obj).__name__}"
+        raise TypeError(msg)
+
+    # Serialize to IPC stream bytes
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, table.schema) as writer:
+        writer.write_table(table)
+    ipc_buf = sink.getvalue()
+    ipc_bytes = memoryview(ipc_buf).cast("B")  # cast signed->unsigned for shm compat
+    ipc_size = len(ipc_bytes)
+
+    # Build FSHR header with FLAG_ARROW_IPC
+    # We set pickle_size=0 and buffer_sizes=[] since Arrow IPC replaces both
+    header = pack_header(pickle_size=0, buffer_sizes=[], flags=FLAG_ARROW_IPC)
+    header_size = len(header)
+
+    # Total layout: header + 1 byte type_tag + IPC data
+    total_size = header_size + 1 + ipc_size
+    block = allocate(total_size)
+
+    # Write header
+    block.buf[0:header_size] = header
+
+    # Write type tag (1 byte after header)
+    offset = header_size
+    block.buf[offset : offset + 1] = bytes([type_tag])
+    offset += 1
+
+    # Write IPC data into shared memory
+    block.buf[offset : offset + ipc_size] = ipc_bytes
+    offset += ipc_size
+
+    return block
+
+
+def deserialize_arrow_from_block(handle: BlockHandle) -> object:
+    """Deserialize an Arrow object from a shared memory block.
+
+    Reads the type tag and IPC data, then restores the original Arrow type.
+
+    Args:
+        handle: A :class:`BlockHandle` wrapping the shared memory block.
+
+    Returns:
+        The reconstructed Arrow object (Table, RecordBatch, Array, or ChunkedArray).
+    """
+    import pyarrow as pa  # noqa: PLC0415
+
+    from fastshare._arrow_utils import restore_arrow_type
+
+    _pickle_size, _buffer_sizes, _flags, header_total_size = unpack_header(handle.buf)
+
+    # Read type tag (1 byte after header)
+    offset = header_total_size
+    type_tag = handle.buf[offset]
+    offset += 1
+
+    # Read IPC data as zero-copy Arrow buffer
+    ipc_data = pa.py_buffer(handle.buf[offset:])
+
+    # Deserialize via IPC stream reader (zero-copy from shared memory)
+    with pa.ipc.open_stream(ipc_data) as reader:
+        table = reader.read_all()
+
+    return restore_arrow_type(table, type_tag)
+
+
 def deserialize_from_block(handle: BlockHandle, *, readonly: bool = True) -> object:
     """Deserialize an object from a shared memory block.
 
-    The pickle metadata is extracted as bytes (small), while large data buffers
-    are passed back as memoryview slices pointing directly into shared memory
-    (zero-copy for NumPy array reconstruction).
+    Routes to Arrow IPC or pickle protocol 5 deserialization based on the
+    flags byte in the FSHR binary header.
 
     Args:
         handle: A :class:`BlockHandle` wrapping the shared memory block.
@@ -150,15 +247,16 @@ def deserialize_from_block(handle: BlockHandle, *, readonly: bool = True) -> obj
     Returns:
         The reconstructed Python object.
     """
-    pickle_size, buffer_sizes, _flags, header_total_size = unpack_header(handle.buf)
+    pickle_size, buffer_sizes, flags, header_total_size = unpack_header(handle.buf)
 
-    # Extract pickle data as bytes (pickle.loads needs bytes, not memoryview).
-    # This is the small metadata stream, not the large data buffers.
+    # Arrow IPC path
+    if flags & FLAG_ARROW_IPC:
+        return deserialize_arrow_from_block(handle)
+
+    # Pickle protocol 5 path (existing behavior)
     header_end = header_total_size
     pickle_data = bytes(handle.buf[header_end : header_end + pickle_size])
 
-    # Create memoryview slices for each buffer -- these point into shared memory.
-    # NumPy arrays will be reconstructed from these slices (zero-copy).
     buffer_views: list[memoryview] = []
     offset = header_end + pickle_size
     for size in buffer_sizes:
