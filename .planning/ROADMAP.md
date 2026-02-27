@@ -29,7 +29,7 @@ See: `.planning/milestones/v1.0-ROADMAP.md` for full details.
 - [x] **Phase 6: Documentation** - Comprehensive README with examples, API reference, benchmarks, and badges (gap closure pending)
 - [x] **Phase 7: Packaging** - pyproject.toml polish, CHANGELOG, and version tag
 - [x] **Phase 8: Repository** - GitHub repo creation and full history push
-- [ ] **Phase 9: Distribution** - Build, TestPyPI validation, PyPI publication, and trusted publisher
+- [x] **Phase 9: Distribution** - Build, TestPyPI validation, PyPI publication, and trusted publisher
 
 ## Phase Details
 
@@ -109,8 +109,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md -- Fix orphaned tag, add --version CLI flag, build and validate distribution artifacts
-- [ ] 09-02-PLAN.md -- Publish to TestPyPI/PyPI, create publish workflow, configure trusted publisher
+- [x] 09-01-PLAN.md -- Fix orphaned tag, add --version CLI flag, build and validate distribution artifacts
+- [x] 09-02-PLAN.md -- Publish to TestPyPI/PyPI, create publish workflow, configure trusted publisher
 
 ## Progress
 
@@ -129,4 +129,4 @@ Phases execute in numeric order: 6 -> 7 -> 8 -> 9
 | 7. Packaging | v1.1 | 2/2 | Complete | 2026-02-26 |
 | 8. Repository | v1.1 | 2/2 | Complete | 2026-02-26 |
 | 8.1 PyArrow Support | v1.1 | 2/2 | Complete | 2026-02-27 |
-| 9. Distribution | v1.1 | 0/2 | Not started | - |
+| 9. Distribution | v1.1 | 2/2 | Complete | 2026-02-27 |

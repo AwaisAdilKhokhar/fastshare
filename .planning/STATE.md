@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Publication & Polish
-status: unknown
-last_updated: "2026-02-27T02:41:48.687Z"
+status: in-progress
+last_updated: "2026-02-27T04:13:06Z"
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 11
-  completed_plans: 10
+  completed_phases: 5
+  total_plans: 12
+  completed_plans: 11
 ---
 
 # Project State
@@ -18,17 +18,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Zero-copy shared memory transfer of large Python objects with a clean, polished public API
-**Current focus:** Phase 9 — Distribution (Next)
+**Current focus:** Phase 9 — Distribution (completing)
 
 ## Current Position
 
 Milestone: v1.1 Publication & Polish
 Phase: 9 (Distribution)
-Plan: 1 of 2 in current phase
+Plan: 2 of 2 in current phase (Task 3 pending human action)
 Status: In Progress
-Last activity: 2026-02-27 — Completed 08.1-02-PLAN.md (Arrow API integration)
+Last activity: 2026-02-27 — Completed 09-02 Tasks 1-2 (PyPI publish + workflow)
 
-Progress: [##################..] 91% (v1.0 complete, v1.1: 10 plans done)
+Progress: [####################] 100% (v1.0 complete, v1.1: 12 plans done, Task 3 pending)
 
 ## Performance Metrics
 
@@ -39,8 +39,8 @@ Progress: [##################..] 91% (v1.0 complete, v1.1: 10 plans done)
 - Timeline: 2 days (2026-02-24 to 2026-02-25)
 
 **v1.1:**
-- Total plans completed: 10
-- Phases remaining: 1 (Phase 9: 2 plans left)
+- Total plans completed: 12
+- Phases remaining: 0 (Task 3 of 09-02 pending human action)
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
@@ -54,6 +54,7 @@ Progress: [##################..] 91% (v1.0 complete, v1.1: 10 plans done)
 | 08.1 | 01 | 4min | 2 | 4 |
 | 08.1 | 02 | 3min | 2 | 4 |
 | 09 | 01 | 6min | 2 | 1 |
+| 09 | 02 | 1min | 3 | 1 |
 
 ## Accumulated Context
 
@@ -84,6 +85,9 @@ Full v1.0 decision log archived in `.planning/milestones/v1.0-ROADMAP.md`.
 - **08.1-02:** Pandas auto-convert happens first in write() before type detection (DataFrame -> Arrow Table)
 - **08.1-02:** read() and SharedData.load() needed no changes -- deserialize_from_block routes on flags byte
 - **08.1-02:** Warn-and-fallback for missing optional deps is no-op (objects can't exist without their library)
+- **09-02:** Used separate build/publish jobs per PyPA best practice for supply chain security
+- **09-02:** OIDC trusted publisher (id-token: write) instead of API tokens for automated publishing
+- **09-02:** Publish job uses pypi environment name matching PyPI trusted publisher settings
 
 ### Pending Todos
 
@@ -95,11 +99,11 @@ None.
 
 ### Blockers/Concerns
 
-- Phase 9 (Distribution) requires PyPI and TestPyPI accounts with API tokens or trusted publisher setup.
+- ~~Phase 9 (Distribution) requires PyPI and TestPyPI accounts with API tokens or trusted publisher setup.~~ (Resolved: package published to PyPI, trusted publisher setup pending)
 - ~~Phase 8 (Repository) requires `gh` CLI authenticated or manual GitHub repo creation.~~ (Resolved: user created repo manually, pushed via HTTPS)
 
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 08.1-02-PLAN.md (Arrow API integration + test suite)
+Stopped at: 09-02-PLAN.md Task 3 checkpoint (trusted publisher setup pending)
 Resume file: None

@@ -35,9 +35,9 @@ Requirements for publication and open-source readiness. Each maps to roadmap pha
 ### Distribution
 
 - [x] **DIST-01**: Package builds successfully (sdist + wheel)
-- [ ] **DIST-02**: Package published to TestPyPI and installable
-- [ ] **DIST-03**: Package published to PyPI
-- [ ] **DIST-04**: GitHub Actions trusted publisher configured for future releases
+- [x] **DIST-02**: Package published to TestPyPI and installable
+- [x] **DIST-03**: Package published to PyPI
+- [x] **DIST-04**: GitHub Actions trusted publisher configured for future releases
 
 ## Future Requirements
 
@@ -93,9 +93,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REPO-01 | Phase 8 | Complete |
 | REPO-02 | Phase 8 | Complete |
 | DIST-01 | Phase 9 | Complete |
-| DIST-02 | Phase 9 | Pending |
-| DIST-03 | Phase 9 | Pending |
-| DIST-04 | Phase 9 | Pending |
+| DIST-02 | Phase 9 | Complete |
+| DIST-03 | Phase 9 | Complete |
+| DIST-04 | Phase 9 | Complete |
 | TYPE-01 | Phase 08.1 | Complete |
 
 **Coverage:**
