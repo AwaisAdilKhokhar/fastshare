@@ -180,6 +180,40 @@ def test_bench_pickle_1gb_numpy(benchmark):
 
 
 # ---------------------------------------------------------------------------
+# Group: roundtrip-2gb-numpy (zero-copy path, extra large)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.benchmark(group="roundtrip-2gb-numpy")
+def test_bench_fastshare_2gb_numpy(benchmark):
+    """Benchmark fastshare for a 2 GB NumPy array (zero-copy shared memory)."""
+    np = pytest.importorskip("numpy")
+    data = np.ones((500_000_000,), dtype=np.float32)  # 2 GB
+
+    def roundtrip():
+        token = write(data)
+        result = read(token, readonly=False)
+        return result
+
+    result = benchmark(roundtrip)
+    assert result.shape == (500_000_000,)
+
+
+@pytest.mark.benchmark(group="roundtrip-2gb-numpy")
+def test_bench_pickle_2gb_numpy(benchmark):
+    """Benchmark plain pickle for a 2 GB NumPy array (comparison baseline)."""
+    np = pytest.importorskip("numpy")
+    data = np.ones((500_000_000,), dtype=np.float32)  # 2 GB
+
+    def roundtrip():
+        buf = pickle.dumps(data, protocol=5)
+        return pickle.loads(buf)  # noqa: S301
+
+    result = benchmark(roundtrip)
+    assert result.shape == (500_000_000,)
+
+
+# ---------------------------------------------------------------------------
 # Group: roundtrip-100mb-arrow (Arrow IPC path)
 # ---------------------------------------------------------------------------
 

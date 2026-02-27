@@ -183,6 +183,7 @@ on Windows 10 (Python 3.12, 8-core Intel).
 | NumPy `float32` | 100 MB | 69 ms | 45 ms | 1.5x |
 | NumPy `float32` | 500 MB | 364 ms | 231 ms | 1.6x |
 | NumPy `float32` | 1 GB | 863 ms | 488 ms | 1.8x |
+| NumPy `float32` | 2 GB | 2,079 ms | 1,304 ms | 1.59x |
 | Arrow Table `int32` | 100 MB | 63 ms | 75 ms | 0.84x |
 | Arrow Table `float32` | 500 MB | 343 ms | 471 ms | 0.73x |
 | Arrow Table `float32` | 1 GB | 1,302 ms | 1,205 ms | 1.08x |
